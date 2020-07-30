@@ -1,0 +1,28 @@
+.footer {
+  background-color: steelblue;
+  color: white;
+  margin-top: 3em;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 0.25em 0;
+}
+
+.footerLogo-container {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1rem;
+}
+
+.footer-logo {
+  width: 10%;
+}
+
+.logo-text {
+  font-size: 1.3rem;
+}
+
+.legal-text {
+  margin-left: 1em;
+}

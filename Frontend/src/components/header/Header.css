@@ -1,0 +1,12 @@
+.header {
+  border-top: 8px solid steelblue;
+  background-color: white;
+  padding: 1em 0;
+}
+
+.logo-container {
+  width: 20%;
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+}

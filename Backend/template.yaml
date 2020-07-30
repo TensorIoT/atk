@@ -1,0 +1,368 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: 'AWS::Serverless-2016-10-31'
+Description: An AWS Serverless Specification template describing your function.
+Globals:
+  Function:
+    Runtime: python3.8
+    MemorySize: 128
+    Timeout: 900
+    Environment:
+      Variables:
+        ATKDeviceListTableName:
+          Ref: ATKDeviceListTable
+        ATKDeviceDataTableName:
+          Ref: ATKDeviceDataTable
+        ATKUserListTableName:
+          Ref: ATKUsersTable
+    Tracing: Active
+
+Parameters: 
+  CognitoUserPoolId: 
+    Type: String
+    Description: Enter cognito user pool id.
+
+Resources:
+  ATKUsersTable:
+    Type: 'AWS::DynamoDB::Table'
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: USERID
+          AttributeType: S
+      KeySchema:
+        - AttributeName: USERID
+          KeyType: HASH
+  ATKDeviceListTable:
+    Type: 'AWS::DynamoDB::Table'
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: DEVEUI
+          AttributeType: S
+        - AttributeName: USERID
+          AttributeType: S
+      KeySchema:
+        - AttributeName: DEVEUI
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: USERID_INDEX
+          KeySchema:
+            - AttributeName: USERID
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+  ATKDeviceDataTable:
+    Type: 'AWS::DynamoDB::Table'
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: DEVEUI
+          AttributeType: S
+        - AttributeName: USERID
+          AttributeType: S
+        - AttributeName: TSTAMP
+          AttributeType: 'N'
+      KeySchema:
+        - AttributeName: DEVEUI
+          KeyType: HASH
+        - AttributeName: TSTAMP
+          KeyType: RANGE
+      GlobalSecondaryIndexes:
+        - IndexName: USERID_INDEX
+          KeySchema:
+            - AttributeName: USERID
+              KeyType: HASH
+            - AttributeName: TSTAMP
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+  DeviceDataRule:
+    Type: 'AWS::IoT::TopicRule'
+    Properties:
+      TopicRulePayload:
+        RuleDisabled: false
+        Sql: SELECT * FROM 'application/tracker/+/up'
+        Actions:
+          - Lambda:
+              FunctionArn:
+                'Fn::GetAtt':
+                  - ATKInsertDataIntoDB
+                  - Arn
+  LambdaInvocationPermission:
+    Type: 'AWS::Lambda::Permission'
+    Properties:
+      SourceArn:
+        'Fn::Join':
+          - ''
+          - - 'arn:aws:iot:'
+            - Ref: 'AWS::Region'
+            - ':'
+            - Ref: 'AWS::AccountId'
+            - ':rule/'
+            - Ref: DeviceDataRule
+      Action: 'lambda:InvokeFunction'
+      Principal: iot.amazonaws.com
+      FunctionName:
+        'Fn::GetAtt':
+          - ATKInsertDataIntoDB
+          - Arn
+      SourceAccount:
+        Ref: 'AWS::AccountId'
+  ATKCommonLambdaRole: 
+    Type: "AWS::IAM::Role"
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - lambda.amazonaws.com
+          Action:
+          - sts:AssumeRole
+      Path: "/"
+      Policies:
+      - PolicyName: ATKDeviceListTable
+        PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+          - Effect: Allow
+            Action:
+            - dynamodb:*
+            Resource:
+              'Fn::GetAtt':
+                - ATKDeviceListTable
+                - Arn
+      - PolicyName: ATKDeviceListTableIndex
+        PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+          - Effect: Allow
+            Action:
+            - dynamodb:*
+            Resource:
+              !Join
+                - '/'
+                - - 'Fn::GetAtt':
+                      - ATKDeviceListTable
+                      - Arn
+                  - 'index'
+                  - '*'            
+      - PolicyName: ATKDeviceDataTable
+        PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+          - Effect: Allow
+            Action:
+            - dynamodb:*
+            Resource:
+              'Fn::GetAtt':
+                - ATKDeviceDataTable
+                - Arn
+      - PolicyName: ATKDeviceDataTableIndex
+        PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+          - Effect: Allow
+            Action:
+            - dynamodb:*
+            Resource:
+              !Join
+                - '/'
+                - - 'Fn::GetAtt':
+                      - ATKDeviceDataTable
+                      - Arn
+                  - 'index'
+                  - '*'                
+      - PolicyName: ATKUsersTableIndex
+        PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+          - Effect: Allow
+            Action:
+            - dynamodb:*
+            Resource:
+              !Join
+                - '/'
+                - - 'Fn::GetAtt':
+                      - ATKUsersTable
+                      - Arn
+                  - 'index'
+                  - '*'                    
+                                 
+      - PolicyName: ATKUsersTable
+        PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+          - Effect: Allow
+            Action:
+            - dynamodb:*
+            Resource:
+              'Fn::GetAtt':
+                - ATKUsersTable
+                - Arn
+      - PolicyName: IoTDescribeRole
+        PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+          - Effect: Allow
+            Action:
+            - iot:DescribeThing
+            Resource: '*'                                                            
+      ManagedPolicyArns:
+          - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+          - arn:aws:iam::aws:policy/AWSXRayDaemonWriteAccess
+  ATKInsertDataIntoDB:
+    Type: 'AWS::Serverless::Function'
+    Properties:
+      Handler: atk_insert_data_into_db.lambda_handler
+      Description: 'Get Data from IoT Core and insert into DB'
+      CodeUri: src/ATKInsertDataIntoDB/
+      Role: !GetAtt ATKCommonLambdaRole.Arn
+
+  ATKApi:
+    Type: AWS::Serverless::Api
+    Properties:
+      StageName: Prod
+      Cors:
+        AllowMethods: "'DELETE,GET,HEAD,OPTIONS,PATCH,POST,PUT'"
+        AllowHeaders: "'Content-Type,Authorization,X-Amz-Date,X-Api-Key,X-Amz-Security-Token'"
+        AllowOrigin: "'*'"
+        MaxAge: "'600'"
+      Auth:
+        AddDefaultAuthorizerToCorsPreflight: false
+        DefaultAuthorizer: ATKCognitoAuthorizer
+        Authorizers:
+          ATKCognitoAuthorizer:
+            UserPoolArn: !Ref CognitoUserPoolId
+  ATKChangeTrackerName:
+    Type: 'AWS::Serverless::Function'
+    Properties:
+      Handler: atk_change_tracker_name.lambda_handler
+      Description: 'Change the name of the tracker'
+      CodeUri: src/ATKChangeTrackerName/
+      Role: !GetAtt ATKCommonLambdaRole.Arn
+      Events:
+        LambdaMicroservice:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ATKApi
+            Path: /atk/devicesettings/changetrackername
+            Method: POST
+  ATKChangeTrackerNamePermission:
+    Type: 'AWS::Lambda::Permission'
+    Properties:
+      Action: 'lambda:InvokeFunction'
+      FunctionName:
+        'Fn::GetAtt':
+          - ATKChangeTrackerName
+          - Arn
+      Principal: apigateway.amazonaws.com
+      SourceArn:
+        'Fn::Sub': 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:*/*/*/*'
+  ATKChangeTrackerFrequency:
+    Type: 'AWS::Serverless::Function'
+    Properties:
+      Handler: atk_change_tracker_frequency.lambda_handler
+      Description: 'Change how frequently the tracker sends data'
+      CodeUri: src/ATKChangeTrackerFrequency/
+      Role: !GetAtt ATKCommonLambdaRole.Arn
+      Events:
+        LambdaMicroservice:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ATKApi
+            Path: /atk/devicesettings/changetrackerfrequency
+            Method: POST
+  ATKChangeTrackerFrequencyPermission:
+    Type: 'AWS::Lambda::Permission'
+    Properties:
+      Action: 'lambda:InvokeFunction'
+      FunctionName:
+        'Fn::GetAtt':
+          - ATKChangeTrackerFrequency
+          - Arn
+      Principal: apigateway.amazonaws.com
+      SourceArn:
+        'Fn::Sub': 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:*/*/*/*'
+  ATKGetUserDevices:
+    Type: 'AWS::Serverless::Function'
+    Properties:
+      Handler: atk_get_user_devices.lambda_handler
+      Description: 'Get the list of users devices'
+      CodeUri: src/ATKGetUserDevices/
+      Role: !GetAtt ATKCommonLambdaRole.Arn
+      Events:
+        LambdaMicroservice:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ATKApi
+            Path: /atk/devices/getuserdevices
+            Method: POST
+  ATKGetUserDevicesPermission:
+    Type: 'AWS::Lambda::Permission'
+    Properties:
+      Action: 'lambda:InvokeFunction'
+      FunctionName:
+        'Fn::GetAtt':
+          - ATKGetUserDevices
+          - Arn
+      Principal: apigateway.amazonaws.com
+      SourceArn:
+        'Fn::Sub': 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:*/*/*/*'
+  ATKGetTrackerData:
+    Type: 'AWS::Serverless::Function'
+    Properties:
+      Handler: atk_get_tracker_data.lambda_handler
+      Description: 'Get the tracker data'
+      CodeUri: src/ATKGetTrackerData/
+      Role: !GetAtt ATKCommonLambdaRole.Arn
+      Events:
+        LambdaMicroservice:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ATKApi
+            Path: /atk/devices/gettrackerdata
+            Method: POST
+  ATKGetTrackerDataPermission:
+    Type: 'AWS::Lambda::Permission'
+    Properties:
+      Action: 'lambda:InvokeFunction'
+      FunctionName:
+        'Fn::GetAtt':
+          - ATKGetTrackerData
+          - Arn
+      Principal: apigateway.amazonaws.com
+      SourceArn:
+        'Fn::Sub': 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:*/*/*/*'
+  ATKGetTrackerDataLatLonOnly:
+    Type: 'AWS::Serverless::Function'
+    Properties:
+      Handler: atk_get_tracker_data_lat_lon_only.lambda_handler
+      Description: 'Get tracker data only lat and long only'
+      CodeUri: src/ATKGetTrackerDataLatLonOnly/
+      Role: !GetAtt ATKCommonLambdaRole.Arn
+      Events:
+        LambdaMicroservice:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ATKApi
+            Path: /atk/devices/gettrackerdatalatlononly
+            Method: POST
+  ATKGetTrackerDataLatLonOnlyPermission:
+    Type: 'AWS::Lambda::Permission'
+    Properties:
+      Action: 'lambda:InvokeFunction'
+      FunctionName:
+        'Fn::GetAtt':
+          - ATKGetTrackerDataLatLonOnly
+          - Arn
+      Principal: apigateway.amazonaws.com
+      SourceArn:
+        'Fn::Sub': 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:*/*/*/*'
+
+Outputs:
+  APIGatewayURL:
+    Description: API Gateway URL
+    Value: Value to return
+    Value: !Sub "https://${ATKApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/"

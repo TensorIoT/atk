@@ -1,0 +1,72 @@
+.nav {
+  /* height: 100vh; */
+}
+.link-container {
+  border-bottom: 1.5px solid rgb(235, 235, 235);
+  padding: 1em 0.75em;
+}
+
+.link-container a {
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.nav__link--dark {
+  color: black;
+}
+
+.nav__link--light {
+  color: rgb(0, 212, 255);
+}
+
+.path-container {
+  font-size: 0.75rem;
+  padding: 2em 0.75em 2em 1rem;
+}
+
+.path-separator {
+  margin: 0 1em;
+}
+
+.signOut p {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.signOut p:hover {
+  cursor: pointer;
+}
+
+.dialogBtn {
+  height: 2.1rem;
+  width: 4rem;
+  border: none;
+  border-radius: 5px;
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.dialogBtn:hover {
+  cursor: pointer;
+  opacity: 0.75;
+  outline: none;
+}
+
+.dialogBtn:focus {
+  background-color: lightgray;
+  color: lightgray;
+  border: 1px solid lightgray;
+}
+
+.yesBtn {
+  background-color: steelblue;
+  color: white;
+  border: none;
+}
+
+.cancelBtn {
+  background-color: white;
+  border: 1px solid steelblue;
+  color: steelblue;
+}
